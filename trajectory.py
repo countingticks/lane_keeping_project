@@ -7,9 +7,9 @@ trajectory_img = np.zeros((500, 500, 3), dtype=np.uint8)
 
 # Parameters
 center = (250, 250)  # Initial position (origin) of the car
-v = 30  # Speed of movement (controls how fast the car moves)
+v = 20  # Speed of movement (controls how fast the car moves)
 
-delta_degrees = -5  # Steering angle in degrees (positive = left turn)
+delta_degrees = 5  # Steering angle in degrees (positive = left turn)
 theta_degrees = 90  # Initial orientation of the car in degrees (0 = East, 90 = North, 180 = West, 270 = South)
 
 delta_radians = math.radians(delta_degrees)  # Convert steering angle to radians
@@ -19,7 +19,7 @@ theta_radians = math.radians(theta_degrees)  # Initial orientation of the car (r
 car_x, car_y = center
 
 # Simulate the trajectory for a given number of steps
-for _ in range(10):
+for _ in range(15):
     # Calculate the new position based on speed and orientation
     new_x = car_x + v * math.cos(theta_radians)
     new_y = car_y - v * math.sin(theta_radians) # invert direction because y-axis is inverted in images
