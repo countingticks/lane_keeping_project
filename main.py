@@ -4,6 +4,7 @@ from multiprocessing import Event
 from src.utils.pipe_storage import PipeStorage
 from src.capture.process_capture import processCapture
 from src.preprocess.process_preprocess import processPreprocess
+from src.lane_detection.process_lane_detection import processLaneDetection
 from src.display.process_display import processDisplay
 
 
@@ -17,6 +18,7 @@ pipes = PipeStorage(debug=True)
 
 processes.append(processCapture(live_camera, pipes, debug=False))
 processes.append(processPreprocess(pipes, debug=False))
+processes.append(processLaneDetection(pipes, debug=False))
 processes.append(processDisplay(pipes, debug=False))
 
 print("\nStarting processes...\n") 
