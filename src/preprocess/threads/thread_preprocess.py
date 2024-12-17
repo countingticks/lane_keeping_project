@@ -3,7 +3,10 @@ import cv2
 import numpy as np
 
 from src.templates.thread_with_stop import ThreadWithStop
-from src.utils.pipes import preprocessToLaneDetection, captureToPreprocess
+from src.utils.pipes import (preprocessToLaneDetectionImage, 
+                            preprocessToLaneDetectionWarpPerspectiveMatrix,
+                            captureToPreprocessImage,
+                            captureToPreprocessImageDimensions)
 
 
 class threadPreprocess(ThreadWithStop):
@@ -12,7 +15,7 @@ class threadPreprocess(ThreadWithStop):
         self._pipes = pipes
         self._debug = debug
 
-        image_width, image_height = self.get_image_dimensions()
+        image_width, image_height = self._pipes.receive_wait(captureToPreprocessImageDimensions)
 
         offset = 50
         roi = {
@@ -25,10 +28,11 @@ class threadPreprocess(ThreadWithStop):
         }
         
         self.warp_perspective = WarpPerspective(roi, image_width, image_height)
+        self._pipes.transmit(preprocessToLaneDetectionWarpPerspectiveMatrix, [self.warp_perspective.])
         
     def run(self):
         while self._running:
-            image = self._pipes.receive(captureToPreprocess)
+            image = self._pipes.receive(captureToPreprocessImage)
 
             if image is None:
                 time.sleep(0.001)
@@ -37,17 +41,7 @@ class threadPreprocess(ThreadWithStop):
             preprocessed_image = ImagePreprocess().preprocess(image)
             warpPerspective_image = self.warp_perspective.transform(preprocessed_image)
         
-            self._pipes.transmit(preprocessToLaneDetection, warpPerspective_image)
-
-    def get_image_dimensions(self):
-        image = self._pipes.receive(captureToPreprocess)
-
-        while image is None:
-            image = self._pipes.receive(captureToPreprocess)
-            time.sleep(0.01)
-            continue
-
-        return image.shape[1], image.shape[0]
+            self._pipes.transmit(preprocessToLaneDetectionImage, warpPerspective_image)
 
     def start(self):
         super(threadPreprocess, self).start()
