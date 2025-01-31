@@ -28,7 +28,7 @@ class threadPreprocess(ThreadWithStop):
         }
         
         self.warp_perspective = WarpPerspective(roi, image_width, image_height)
-        self._pipes.transmit(preprocessToLaneDetectionWarpPerspectiveMatrix, [self.warp_perspective.])
+        self._pipes.transmit(preprocessToLaneDetectionWarpPerspectiveMatrix, self.warp_perspective.inverse_transform_matrix)
         
     def run(self):
         while self._running:

@@ -1,8 +1,11 @@
 import time
+import numpy as np
 
 from src.templates.thread_with_stop import ThreadWithStop
 from src.lane_detection.lane_detect import LaneDetect
-from src.utils.pipes import (preprocessToLaneDetectionImage, 
+from src.utils.pipes import (preprocessToLaneDetectionImage,
+                            preprocessToLaneDetectionWarpPerspectiveMatrix,
+                            laneDetectionToDisplayData,
                             laneDetectionToDisplayImage,
                             captureToLaneDetectionImageDimensions)
 
@@ -13,9 +16,10 @@ class threadLaneDetection(ThreadWithStop):
         self._pipes = pipes
         self._debug = debug
 
-        image_width, image_height = self._pipes.receive_wait(captureToLaneDetectionImageDimensions)
+        self.image_width, image_height = self._pipes.receive_wait(captureToLaneDetectionImageDimensions)
 
-        self.lane_detect = LaneDetect(image_width, image_height)
+        self.lane_detect = LaneDetect(self.image_width, image_height)
+        self.warp_perspective_inverse_matrix = self._pipes.receive_wait(preprocessToLaneDetectionWarpPerspectiveMatrix)
 
     def run(self):
         while self._running:
@@ -27,12 +31,12 @@ class threadLaneDetection(ThreadWithStop):
 
             lane_data = self.lane_detect.detect(image)
 
-            if lane_data["lines"]["left"] is None and lane_data["lines"]["right"] is None:
-                continue
-
-            ReverseCoordinates().reverseLineCoordinates([lane_data["lines"]["left"], lane_data["lines"]["right"], lane_data["lines"]["middle"]], self.warpPerspective.inverseTransformMatrix)
-        
+            if lane_data["lines"]["left"] is not None or lane_data["lines"]["right"] is not None:
+                print(DistanceError.getError(lane_data, self.image_width))
+                ReverseCoordinates().reverseLineCoordinates([lane_data["lines"]["left"], lane_data["lines"]["right"], lane_data["lines"]["middle"]], self.warp_perspective_inverse_matrix)
+            
             self._pipes.transmit(laneDetectionToDisplayImage, image)
+            self._pipes.transmit(laneDetectionToDisplayData, lane_data)
             time.sleep(0.001)
 
     def start(self):
@@ -40,6 +44,23 @@ class threadLaneDetection(ThreadWithStop):
     
     def stop(self):
         super(threadLaneDetection, self).stop()
+
+
+
+class DistanceError:
+    @staticmethod
+    def getError(lane_data, image_width):
+        if lane_data["lines"]["middle"] is not None:
+            error_top = image_width / 2 - lane_data["lines"]["middle"][0][0]
+            error_bottom = image_width / 2 - lane_data["lines"]["middle"][-1][0]
+
+            # error_top = self.pixelsToCentimeters(error_top, lane_data, lane_data["lines"]["middle"][0][1])
+            # error_bottom = self.pixelsToCentimeters(error_bottom, lane_data, lane_data["lines"]["middle"][-1][1])
+
+            return { "top": error_top, "bottom": error_bottom }
+        
+        return None
+    
 
 
 class ReverseCoordinates:

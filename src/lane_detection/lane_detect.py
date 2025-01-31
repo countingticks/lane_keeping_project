@@ -1,256 +1,343 @@
 import numpy as np
 
-
 class LaneDetect:
-    # ============================== INIT ==============================
     def __init__(self, width, height):
         self.width = width
         self.height = height
 
-        self.laneWidth = 230 # in pixels
+        # Lane width in pixels (approx)
+        self.laneWidth = 230
 
+        # Number of vertical windows for sliding-window approach
         self.windowsNumber = 7
-        self.widowMinPixels = np.int32(width / 24)
-
+        
+        # Minimum number of nonzero pixels to shift the window center
+        self.windowMinPixels = np.int32(width / 24)
+        
+        # Each window's dimension
         self.windowWidth = np.int32(width / 12)
         self.windowHeight = np.int32(height / self.windowsNumber)
 
+        # Track whether our last detection was sane
         self.sanity = False
+
+        # Track previous frame’s fits for fastSearch
         self.lastLeftFit = None
         self.lastRightFit = None
-        
-    # ============================== DETECT LANE ==============================
-    def detect(self, image):
-        leftWindows = None
-        rightWindows = None
 
-        if self.sanity:
+    # --------------------- MAIN DETECT METHOD --------------------- #
+    def detect(self, image):
+        """
+        image is assumed to be a preprocessed (binary) ROI, 
+        such as what you showed in your example.
+        """
+        # 1) Use fast search if previous frame was sane
+        if self.sanity and self.lastLeftFit is not None and self.lastRightFit is not None:
             leftLine, rightLine = self.fastSearch(image, self.lastLeftFit, self.lastRightFit)
         else:
-            leftLine, rightLine, leftWindows, rightWindows = self.searchLane(image)
+            # fallback to the full sliding-window approach
+            leftLine, rightLine = self.searchLane(image)
 
+        # 2) Check if the new lines are valid
         self.sanity = self.sanityCheck(leftLine, rightLine, debug=False)
-            
-        self.lastLeftFit = leftLine["fit"]
-        self.lastRightFit = rightLine["fit"]
+        
+        # 3) If still not sane, do a full search again
+        if not self.sanity:
+            leftLine, rightLine = self.searchLane(image)
+            self.sanity = self.sanityCheck(leftLine, rightLine, debug=False)
+
+        # 4) Update stored fits
+        if leftLine["fit"] is not None:
+            self.lastLeftFit = leftLine["fit"]
+        if rightLine["fit"] is not None:
+            self.lastRightFit = rightLine["fit"]
+
+        # 5) Build the lane line coordinates
         leftLineCoordinates, rightLineCoordinates = self.getLaneLines(leftLine, rightLine)
         middleLineCoordinates = self.getMiddleLine(leftLineCoordinates, rightLineCoordinates)
 
-        return {"lines": {"left": leftLineCoordinates, "right": rightLineCoordinates, "middle": middleLineCoordinates}, "windows": {"left": leftWindows, "right": rightWindows}}
-    
-    # ============================== SEARCH LANE ==============================
-    def searchLane(self, image):
-        leftPeak, rightPeak = self.getHistogramPeaks(image)
+        return {
+            "lines": {
+                "left": leftLineCoordinates,
+                "right": rightLineCoordinates,
+                "middle": middleLineCoordinates
+            }
+        }
 
+    # --------------------- FULL SLIDING-WINDOW SEARCH --------------------- #
+    def searchLane(self, image):
+        """
+        Perform a fresh sliding-window search to detect left and right lanes.
+        """
+        leftPeak, rightPeak = self.getHistogramPeaks(image)
+        
         nonzero = image.nonzero()
-        nonzeroX = np.array(nonzero[1])
         nonzeroY = np.array(nonzero[0])
+        nonzeroX = np.array(nonzero[1])
 
         leftIndices = []
         rightIndices = []
 
-        leftCount = 0
-        rightCount = 0
-
-        leftWindowsCoords = []
-        rightWindowsCoords = []
+        # For minor adjustments: if we can't find enough pixels in one window,
+        # we won't recenter again for that side. This is our "count" check below.
+        leftMissed = 0
+        rightMissed = 0
 
         for window in range(self.windowsNumber):
-            windowYLow = self.height - (window + 1) * self.windowHeight
-            windowYHigh = self.height - window * self.windowHeight
+            winYLow = self.height - (window + 1) * self.windowHeight
+            winYHigh = self.height - window * self.windowHeight
 
-            if leftPeak and leftCount < 1:
-                windowXLeftLow = leftPeak - self.windowWidth
-                windowXLeftHigh = leftPeak + self.windowWidth
+            # --- Left Lane Window ---
+            if leftPeak is not None and leftMissed < 1:
+                winXLeftLow = leftPeak - self.windowWidth
+                winXLeftHigh = leftPeak + self.windowWidth
 
-                leftWindowsCoords.append([[windowXLeftLow, windowYLow], [windowXLeftHigh, windowYHigh]])
+                goodLeft = ((nonzeroY >= winYLow) & (nonzeroY < winYHigh) &
+                            (nonzeroX >= winXLeftLow) & (nonzeroX < winXLeftHigh)).nonzero()[0]
+                leftIndices.append(goodLeft)
 
-                leftIndicesInWindow = ((nonzeroY >= windowYLow) & (nonzeroY < windowYHigh) & (nonzeroX >= windowXLeftLow) & (nonzeroX < windowXLeftHigh)).nonzero()[0]
-                leftIndices.append(leftIndicesInWindow)
-
-                if len(leftIndicesInWindow) > self.widowMinPixels:
-                    leftPeak = np.int32(np.mean(nonzeroX[leftIndicesInWindow]))
+                # Recenter if enough pixels found
+                if len(goodLeft) > self.windowMinPixels:
+                    leftPeak = np.int32(np.mean(nonzeroX[goodLeft]))
                 else:
-                    leftCount += 1
+                    leftMissed += 1
 
-            if rightPeak and rightCount < 1:
-                windowXRightLow = rightPeak - self.windowWidth
-                windowXRightHigh = rightPeak + self.windowWidth
+            # --- Right Lane Window ---
+            if rightPeak is not None and rightMissed < 1:
+                winXRightLow = rightPeak - self.windowWidth
+                winXRightHigh = rightPeak + self.windowWidth
 
-                rightWindowsCoords.append([[windowXRightLow, windowYLow], [windowXRightHigh, windowYHigh]])
+                goodRight = ((nonzeroY >= winYLow) & (nonzeroY < winYHigh) &
+                             (nonzeroX >= winXRightLow) & (nonzeroX < winXRightHigh)).nonzero()[0]
+                rightIndices.append(goodRight)
 
-                rightIndicesInWindow = ((nonzeroY >= windowYLow) & (nonzeroY < windowYHigh) & (nonzeroX >= windowXRightLow) & (nonzeroX < windowXRightHigh)).nonzero()[0]
-                rightIndices.append(rightIndicesInWindow)
-
-                if len(rightIndicesInWindow) > self.widowMinPixels:
-                    rightPeak = np.int32(np.mean(nonzeroX[rightIndicesInWindow]))
+                # Recenter if enough pixels found
+                if len(goodRight) > self.windowMinPixels:
+                    rightPeak = np.int32(np.mean(nonzeroX[goodRight]))
                 else:
-                    rightCount += 1
+                    rightMissed += 1
 
-        if leftIndices:
+        # Concatenate arrays of indices
+        if len(leftIndices) > 0:
             leftIndices = np.concatenate(leftIndices)
+        else:
+            leftIndices = []
 
-        if rightIndices:
+        if len(rightIndices) > 0:
             rightIndices = np.concatenate(rightIndices)
+        else:
+            rightIndices = []
 
-        leftPoints = [nonzeroX[leftIndices], nonzeroY[leftIndices]] if len(leftIndices) >= 50 else None
-        rightPoints = [nonzeroX[rightIndices], nonzeroY[rightIndices]] if len(rightIndices) >= 50 else None
-
+        # Extract left/right point coordinates
         leftLine = {"fit": None}
         rightLine = {"fit": None}
 
-        if leftPoints:
-            leftLine["fit"] = np.polyfit(leftPoints[1], leftPoints[0], 2)
-            leftLine["min"] = min(leftPoints[1])
-            leftLine["max"] = max(leftPoints[1])
-            
-        if rightPoints:
-            rightLine["fit"] = np.polyfit(rightPoints[1], rightPoints[0], 2)
-            rightLine["min"] = min(rightPoints[1])
-            rightLine["max"] = max(rightPoints[1])
+        # Need a minimum of points to fit
+        if len(leftIndices) >= 50:
+            leftX = nonzeroX[leftIndices]
+            leftY = nonzeroY[leftIndices]
+            fitL = np.polyfit(leftY, leftX, 2)
+            leftLine["fit"] = fitL
+            leftLine["min"] = np.min(leftY)
+            leftLine["max"] = np.max(leftY)
 
-        return leftLine, rightLine, leftWindowsCoords, rightWindowsCoords
-    
-    def fastSearch(self, image, leftFit, rightFit):
-        nonzero = image.nonzero()
-        nonzeroX = np.array(nonzero[1])
-        nonzeroY = np.array(nonzero[0])
-
-        leftIndices = ((nonzeroX > (leftFit[0] * np.power(nonzeroY, 2) + leftFit[1] * nonzeroY + leftFit[2] - self.windowWidth))
-                    & (nonzeroX < (leftFit[0] * np.power(nonzeroY, 2) + leftFit[1] * nonzeroY + leftFit[2] + self.windowWidth)))
-        
-        rightIndices = ((nonzeroX > (rightFit[0] * np.power(nonzeroY, 2) + rightFit[1] * nonzeroY + rightFit[2] - self.windowWidth))
-                    & (nonzeroX < (rightFit[0] * np.power(nonzeroY, 2) + rightFit[1] * nonzeroY + rightFit[2] + self.windowWidth)))
-        
-        leftPoints = [nonzeroX[leftIndices], nonzeroY[leftIndices]] if len(leftIndices) >= 50 else None
-        rightPoints = [nonzeroX[rightIndices], nonzeroY[rightIndices]] if len(rightIndices) >= 50 else None
-
-        leftLine = {"fit": None}
-        rightLine = {"fit": None}
-
-        if leftPoints[0].any() and leftPoints[1].any():
-            leftLine["fit"] = np.polyfit(leftPoints[1], leftPoints[0], 2)
-            leftLine["min"] = min(leftPoints[1])
-            leftLine["max"] = max(leftPoints[1])
-            
-        if rightPoints[0].any() and rightPoints[1].any():
-            rightLine["fit"] = np.polyfit(rightPoints[1], rightPoints[0], 2)
-            rightLine["min"] = min(rightPoints[1])
-            rightLine["max"] = max(rightPoints[1])
+        if len(rightIndices) >= 50:
+            rightX = nonzeroX[rightIndices]
+            rightY = nonzeroY[rightIndices]
+            fitR = np.polyfit(rightY, rightX, 2)
+            rightLine["fit"] = fitR
+            rightLine["min"] = np.min(rightY)
+            rightLine["max"] = np.max(rightY)
 
         return leftLine, rightLine
 
-    # ============================== SANITY CHECK ==============================
+    # --------------------- FAST SEARCH AROUND PREVIOUS FITS --------------------- #
+    def fastSearch(self, image, leftFit, rightFit):
+        nonzero = image.nonzero()
+        nonzeroY = np.array(nonzero[0])
+        nonzeroX = np.array(nonzero[1])
+
+        # We'll look within +/- windowWidth around the predicted x
+        leftMask = (
+            (nonzeroX > (leftFit[0] * (nonzeroY ** 2) + leftFit[1] * nonzeroY + leftFit[2] - self.windowWidth)) &
+            (nonzeroX < (leftFit[0] * (nonzeroY ** 2) + leftFit[1] * nonzeroY + leftFit[2] + self.windowWidth))
+        )
+        rightMask = (
+            (nonzeroX > (rightFit[0] * (nonzeroY ** 2) + rightFit[1] * nonzeroY + rightFit[2] - self.windowWidth)) &
+            (nonzeroX < (rightFit[0] * (nonzeroY ** 2) + rightFit[1] * nonzeroY + rightFit[2] + self.windowWidth))
+        )
+
+        leftX = nonzeroX[leftMask]
+        leftY = nonzeroY[leftMask]
+        rightX = nonzeroX[rightMask]
+        rightY = nonzeroY[rightMask]
+
+        leftLine = {"fit": None}
+        rightLine = {"fit": None}
+
+        # Fit polynomials if enough points
+        if len(leftX) >= 50 and len(leftY) >= 50:
+            fitL = np.polyfit(leftY, leftX, 2)
+            leftLine["fit"] = fitL
+            leftLine["min"] = np.min(leftY)
+            leftLine["max"] = np.max(leftY)
+
+        if len(rightX) >= 50 and len(rightY) >= 50:
+            fitR = np.polyfit(rightY, rightX, 2)
+            rightLine["fit"] = fitR
+            rightLine["min"] = np.min(rightY)
+            rightLine["max"] = np.max(rightY)
+
+        return leftLine, rightLine
+
+    # --------------------- SANITY CHECK --------------------- #
     def sanityCheck(self, leftLine, rightLine, debug=False):
+        """
+        Checks that lines are a reasonable distance apart,
+        and have similar angle.
+        """
         if leftLine["fit"] is None or rightLine["fit"] is None:
             return False
-    
-        leftY = np.linspace(leftLine["min"], leftLine["max"] - 1, leftLine["max"] - leftLine["min"])
-        leftFitX = leftLine["fit"][0] * leftY ** 2 + leftLine["fit"][1] * leftY + leftLine["fit"][2]
 
-        rightY = np.linspace(rightLine["min"], rightLine["max"] - 1, rightLine["max"] - rightLine["min"])
-        rightFitX = rightLine["fit"][0] * rightY ** 2 + rightLine["fit"][1] * rightY + rightLine["fit"][2]
+        # Build x-values for both lines
+        leftYRange = np.linspace(leftLine["min"], leftLine["max"], num=50, dtype=np.int32)
+        rightYRange = np.linspace(rightLine["min"], rightLine["max"], num=50, dtype=np.int32)
 
-        if leftFitX.shape[0] < rightFitX.shape[0]:
-            rightFitX = rightFitX[-leftFitX.shape[0]:]
+        leftX = leftLine["fit"][0] * leftYRange**2 + leftLine["fit"][1] * leftYRange + leftLine["fit"][2]
+        rightX = rightLine["fit"][0] * rightYRange**2 + rightLine["fit"][1] * rightYRange + rightLine["fit"][2]
 
-        if rightFitX.shape[0] < leftFitX.shape[0]:
-            leftFitX = leftFitX[-rightFitX.shape[0]:]
+        # Make sure arrays have same length to compare
+        if len(leftX) > len(rightX):
+            leftX = leftX[-len(rightX):]
+        elif len(rightX) > len(leftX):
+            rightX = rightX[-len(leftX):]
 
-        deltaLines = np.mean(rightFitX - leftFitX)
-
-        if not 200 <= deltaLines <= 270:
-            print(f"deltaLines: {deltaLines}") if debug else None
+        # Average horizontal distance between lines
+        delta = np.mean(rightX - leftX)
+        if not (200 <= delta <= 270):
+            if debug: print(f"[SanityCheck] Delta distance: {delta}")
             return False
-        
-        left_slope = 2 * leftLine["fit"][0] * self.height + leftLine["fit"][1]
-        right_slope = 2 * rightLine["fit"][0] * self.height + rightLine["fit"][1]
 
-        leftAngle = self.calculateAngle(left_slope)
-        rightAngle = self.calculateAngle(right_slope)
+        # Compare angles at the bottom
+        leftSlope = 2*leftLine["fit"][0]*self.height + leftLine["fit"][1]
+        rightSlope = 2*rightLine["fit"][0]*self.height + rightLine["fit"][1]
 
+        leftAngle = self.calculateAngle(leftSlope)
+        rightAngle = self.calculateAngle(rightSlope)
+
+        # If angles differ too much, fail
         if abs(leftAngle - rightAngle) > 10:
-            print(f"diff: {abs(leftAngle - rightAngle)}") if debug else None
+            if debug: print(f"[SanityCheck] Angle difference: {abs(leftAngle - rightAngle)}")
             return False
         
+        # If lines are too steep or wide angle, fail
         if abs(leftAngle) > 7 or abs(rightAngle) > 7:
-            print(f"leftAngle: {leftAngle}, rightAngle: {rightAngle}") if debug else None
+            if debug: print(f"[SanityCheck] Left: {leftAngle:.2f}, Right: {rightAngle:.2f}")
             return False
 
         return True
 
-    # ============================== HELPER ==============================
-    def getHistogram(self, image, percent=0.75):
-        return np.sum(image[int(image.shape[0] * percent):, :], axis=0)
-    
+    # --------------------- HELPER: HISTOGRAM --------------------- #
+    def getHistogram(self, image, percent=0.75, skip=2):
+        """
+        Compute the horizontal histogram by summing rows from 'percent' height
+        down to the bottom. 'skip' determines how many columns to skip for speed.
+        """
+        y_start = int(image.shape[0] * percent)
+        # Sums across each column, skipping some columns for speed
+        return np.sum(image[y_start:, ::skip], axis=0)
+
     def getHistogramPeaks(self, image):
+        """
+        Returns leftPeak and rightPeak X positions by analyzing histogram
+        in the lower part of the image. Adjust if you have a known lane width, etc.
+        """
         percent = 0.75
-        histogram = self.getHistogram(image, percent)
-
+        skip = 2  # skip columns in histogram
+        histogram = self.getHistogram(image, percent=percent, skip=skip)
+        
         while True:
-            midpoint = np.int32(histogram.shape[0] / 2)
+            midpoint = np.int32(len(histogram) / 2)
+            
+            # The actual X-coord is "index * skip" if you skipped columns
+            # We'll store these 'peaks' in the reduced histogram domain
+            leftPeakIndex = np.argmax(histogram[:midpoint])
+            rightPeakIndex = np.argmax(histogram[midpoint:]) + midpoint
+            
+            # Convert back to actual X-coordinates
+            leftPeak = leftPeakIndex * skip
+            rightPeak = rightPeakIndex * skip
 
-            leftPeak = np.argmax(histogram[:midpoint])
-            if histogram[leftPeak] == 0:
+            # If either side is zero, can't detect
+            if histogram[leftPeakIndex] == 0:
                 leftPeak = None
-
-            # we need to invert the right histogram because the argmax function returns the first occurence of the max value and we need the last
-            rightHistogram = histogram[midpoint:]
-            rightPeak = np.where(rightHistogram == np.max(rightHistogram))[0][-1] + midpoint
-            if histogram[rightPeak] == 0:
+            if histogram[rightPeakIndex] == 0:
                 rightPeak = None
 
             if leftPeak is None or rightPeak is None:
                 return leftPeak, rightPeak
 
+            # Check if they're a reasonable distance apart
             if abs(leftPeak - rightPeak) > 150:
                 return leftPeak, rightPeak
 
+            # If they are too close, move up the image (increase percent)
             percent += 0.05
             if percent > 1:
                 return None, None
+            # Recompute histogram higher up
+            histogram = self.getHistogram(image, percent=percent, skip=skip)
 
-            histogram = self.getHistogram(image, percent)
-
+    # --------------------- BUILDING LANE LINES --------------------- #
     def getLaneLines(self, leftLine, rightLine):
-        leftLineCoordinates = None
-        rightLineCoordinates = None
+        """
+        Return coordinate arrays (x, y) for each line.
+        """
+        leftCoordinates = None
+        rightCoordinates = None
 
         if leftLine["fit"] is not None:
-            leftLineCoordinates = self.getLine(leftLine)
+            leftCoordinates = self.getLine(leftLine)
 
         if rightLine["fit"] is not None:
-            rightLineCoordinates = self.getLine(rightLine)
+            rightCoordinates = self.getLine(rightLine)
 
-        return leftLineCoordinates, rightLineCoordinates
-    
+        return leftCoordinates, rightCoordinates
+
     def getLine(self, line):
-        y = np.linspace(line["min"], line["max"] - 1, line["max"] - line["min"])
-        x = line["fit"][0] * y ** 2 + line["fit"][1] * y + line["fit"][2]
-        return np.column_stack((x.astype(np.int32), y.astype(np.int32)))
-    
+        """
+        Generate x,y points along the polynomial fit for the range [min, max].
+        """
+        y_vals = np.linspace(line["min"], line["max"], line["max"] - line["min"], dtype=np.int32)
+        x_vals = line["fit"][0] * (y_vals**2) + line["fit"][1] * y_vals + line["fit"][2]
+        return np.column_stack((x_vals.astype(np.int32), y_vals))
+
+    # --------------------- MIDDLE LINE --------------------- #
+    def getMiddleLine(self, leftLine, rightLine):
+        """
+        Compute a center line by averaging left and right x-coords 
+        or offset from a single side if only one side is available.
+        """
+        if leftLine is None and rightLine is None:
+            return None
+        if leftLine is None:
+            # If we only have right line, shift it by half lane width to the left
+            return np.column_stack((rightLine[:, 0] - self.laneWidth // 2, rightLine[:, 1]))
+        if rightLine is None:
+            # If we only have left line, shift it by half lane width to the right
+            return np.column_stack((leftLine[:, 0] + self.laneWidth // 2, leftLine[:, 1]))
+
+        # If both lines exist, align their lengths if mismatch
+        if leftLine.shape[0] < rightLine.shape[0]:
+            rightLine = rightLine[-leftLine.shape[0]:]
+        elif rightLine.shape[0] < leftLine.shape[0]:
+            leftLine = leftLine[-rightLine.shape[0]:]
+
+        # Take the average of their x-values
+        return np.mean([leftLine, rightLine], axis=0).astype(np.int32)
+
+    # --------------------- HELPER: ANGLE FROM SLOPE --------------------- #
     def calculateAngle(self, slope):
         angleRad = np.arctan(slope)
         angleDeg = np.degrees(angleRad)
         return angleDeg
-
-    def getMiddleLine(self, leftLine, rightLine):
-        if leftLine is None and rightLine is None:
-            return None
-
-        if leftLine is None or (leftLine.shape[0] <= 150 and rightLine is not None and rightLine.shape[0] > leftLine.shape[0]):
-            return np.column_stack((rightLine[:, 0] - self.laneWidth // 2, rightLine[:, 1]))
-        
-        if rightLine is None or (rightLine.shape[0] <= 150 and leftLine is not None and leftLine.shape[0] > rightLine.shape[0]):
-            return np.column_stack((leftLine[:, 0] + self.laneWidth // 2, leftLine[:, 1]))
-        
-        # if leftLine has fewer points than rightLine
-        if leftLine.shape[0] < rightLine.shape[0]:
-            rightLine = rightLine[-leftLine.shape[0]:]
-        
-        # if rightLine has fewer points than leftLine
-        if rightLine.shape[0] < leftLine.shape[0]:
-            leftLine = leftLine[-rightLine.shape[0]:]
-        
-        return np.mean([leftLine, rightLine], axis=0).astype(np.int32)
-        

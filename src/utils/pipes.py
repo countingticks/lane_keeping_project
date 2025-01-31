@@ -60,3 +60,10 @@ class laneDetectionToDisplayImage(Enum):
     name = transmitter + "_" + receiver + "-" + str(enum_id)
     delivery_mode = "last"
     
+class laneDetectionToDisplayData(Enum):
+    transmitter = "processLaneDetection"
+    receiver = "processDisplay"
+    enum_id = 2
+    name = transmitter + "_" + receiver + "-" + str(enum_id)
+    delivery_mode = "last"
+    

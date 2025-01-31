@@ -4,7 +4,9 @@ import numpy as np
 
 from src.templates.thread_with_stop import ThreadWithStop
 from src.utils.pipes import (laneDetectionToDisplayImage, 
+                            laneDetectionToDisplayData,
                             captureToDisplayImage)
+
 
 class ThreadDisplay(ThreadWithStop):
     def __init__(self, pipes, debug=False):
@@ -16,6 +18,19 @@ class ThreadDisplay(ThreadWithStop):
         while self._running:
             # display real image
             real_image = self._pipes.receive(captureToDisplayImage)
+            lane_data = self._pipes.receive(laneDetectionToDisplayData)
+
+            if lane_data is not None:
+                lane_data = lane_data["lines"]
+
+                if lane_data["left"] is not None:
+                    cv2.polylines(real_image, [lane_data["left"]], False, (255, 0, 0), 2)
+
+                if lane_data["right"] is not None:
+                    cv2.polylines(real_image, [lane_data["right"]], False, (0, 0, 255), 2)
+
+                if lane_data["middle"] is not None:
+                    cv2.polylines(real_image, [lane_data["middle"]], False, (0, 255, 0), 2)
 
             if self._debug:
                 print("real image: ", real_image)
@@ -31,12 +46,12 @@ class ThreadDisplay(ThreadWithStop):
                 print("image: ", image)
 
             if image is None:
-                time.sleep(0.001)
+                time.sleep(0.02)
                 continue
 
             cv2.imshow("test", image)
             cv2.waitKey(1)
-            time.sleep(0.001)
+            time.sleep(0.02)
 
     def start(self):
         super(ThreadDisplay, self).start()
