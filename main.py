@@ -6,16 +6,18 @@ from src.capture.process_capture import processCapture
 from src.preprocess.process_preprocess import processPreprocess
 from src.lane_detection.process_lane_detection import processLaneDetection
 from src.display.process_display import processDisplay
+from src.serial.process_serial import processSerial
 
 
 # flags
-live_camera = False
+live_camera = True
 
 # processes
 processes = list()
 blocker = Event()
 pipes = PipeStorage(debug=True)
 
+processes.append(processSerial(pipes, debug=False))
 processes.append(processCapture(live_camera, pipes, debug=False))
 processes.append(processPreprocess(pipes, debug=False))
 processes.append(processLaneDetection(pipes, debug=False))

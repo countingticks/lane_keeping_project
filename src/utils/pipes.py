@@ -67,3 +67,11 @@ class laneDetectionToDisplayData(Enum):
     name = transmitter + "_" + receiver + "-" + str(enum_id)
     delivery_mode = "last"
     
+# LANE DETECTION TO SERIAL
+
+class laneDetectionToSerialError(Enum):
+    transmitter = "processLaneDetection"
+    receiver = "processSerial"
+    enum_id = 1
+    name = transmitter + "_" + receiver + "-" + str(enum_id)
+    delivery_mode = "last"

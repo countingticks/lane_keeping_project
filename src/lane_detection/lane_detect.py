@@ -6,13 +6,13 @@ class LaneDetect:
         self.height = height
 
         # Lane width in pixels (approx)
-        self.laneWidth = 230
+        self.laneWidth = 200
 
         # Number of vertical windows for sliding-window approach
         self.windowsNumber = 7
         
         # Minimum number of nonzero pixels to shift the window center
-        self.windowMinPixels = np.int32(width / 24)
+        self.windowMinPixels = np.int32(width / 32)
         
         # Each window's dimension
         self.windowWidth = np.int32(width / 12)
@@ -26,11 +26,7 @@ class LaneDetect:
         self.lastRightFit = None
 
     # --------------------- MAIN DETECT METHOD --------------------- #
-    def detect(self, image):
-        """
-        image is assumed to be a preprocessed (binary) ROI, 
-        such as what you showed in your example.
-        """
+    def detect(self, image, debug):
         # 1) Use fast search if previous frame was sane
         if self.sanity and self.lastLeftFit is not None and self.lastRightFit is not None:
             leftLine, rightLine = self.fastSearch(image, self.lastLeftFit, self.lastRightFit)
@@ -39,12 +35,12 @@ class LaneDetect:
             leftLine, rightLine = self.searchLane(image)
 
         # 2) Check if the new lines are valid
-        self.sanity = self.sanityCheck(leftLine, rightLine, debug=False)
+        self.sanity = self.sanityCheck(leftLine, rightLine, debug=debug)
         
         # 3) If still not sane, do a full search again
         if not self.sanity:
             leftLine, rightLine = self.searchLane(image)
-            self.sanity = self.sanityCheck(leftLine, rightLine, debug=False)
+            self.sanity = self.sanityCheck(leftLine, rightLine, debug=debug)
 
         # 4) Update stored fits
         if leftLine["fit"] is not None:
@@ -214,7 +210,7 @@ class LaneDetect:
 
         # Average horizontal distance between lines
         delta = np.mean(rightX - leftX)
-        if not (200 <= delta <= 270):
+        if not (150 <= delta <= 250):
             if debug: print(f"[SanityCheck] Delta distance: {delta}")
             return False
 
@@ -226,12 +222,12 @@ class LaneDetect:
         rightAngle = self.calculateAngle(rightSlope)
 
         # If angles differ too much, fail
-        if abs(leftAngle - rightAngle) > 10:
+        if abs(leftAngle - rightAngle) > 20:
             if debug: print(f"[SanityCheck] Angle difference: {abs(leftAngle - rightAngle)}")
             return False
         
         # If lines are too steep or wide angle, fail
-        if abs(leftAngle) > 7 or abs(rightAngle) > 7:
+        if abs(leftAngle) > 15 or abs(rightAngle) > 15:
             if debug: print(f"[SanityCheck] Left: {leftAngle:.2f}, Right: {rightAngle:.2f}")
             return False
 
@@ -278,7 +274,7 @@ class LaneDetect:
                 return leftPeak, rightPeak
 
             # Check if they're a reasonable distance apart
-            if abs(leftPeak - rightPeak) > 150:
+            if abs(leftPeak - rightPeak) > 100:
                 return leftPeak, rightPeak
 
             # If they are too close, move up the image (increase percent)

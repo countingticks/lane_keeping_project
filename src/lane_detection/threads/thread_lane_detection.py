@@ -7,6 +7,7 @@ from src.utils.pipes import (preprocessToLaneDetectionImage,
                             preprocessToLaneDetectionWarpPerspectiveMatrix,
                             laneDetectionToDisplayData,
                             laneDetectionToDisplayImage,
+                            laneDetectionToSerialError,
                             captureToLaneDetectionImageDimensions)
 
 
@@ -29,12 +30,12 @@ class threadLaneDetection(ThreadWithStop):
                 time.sleep(0.001)
                 continue
 
-            lane_data = self.lane_detect.detect(image)
+            lane_data = self.lane_detect.detect(image, self._debug)
 
             if lane_data["lines"]["left"] is not None or lane_data["lines"]["right"] is not None:
-                print(DistanceError.getError(lane_data, self.image_width))
+                self._pipes.transmit(laneDetectionToSerialError, DistanceError.getError(lane_data, self.image_width))
                 ReverseCoordinates().reverseLineCoordinates([lane_data["lines"]["left"], lane_data["lines"]["right"], lane_data["lines"]["middle"]], self.warp_perspective_inverse_matrix)
-            
+
             self._pipes.transmit(laneDetectionToDisplayImage, image)
             self._pipes.transmit(laneDetectionToDisplayData, lane_data)
             time.sleep(0.001)
