@@ -5,7 +5,6 @@ import math
 # Create an empty black image to draw the trajectory
 trajectory_img = np.zeros((500, 500, 3), dtype=np.uint8)
 
-# Parameters
 center = (250, 250)  # Initial position (origin) of the car
 v = 20  # Speed of movement (controls how fast the car moves)
 
