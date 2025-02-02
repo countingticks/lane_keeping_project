@@ -14,7 +14,7 @@ class threadSerial(ThreadWithStop):
         self.ser = serial.Serial('/dev/ttyACM0', 9600, timeout=1)
         time.sleep(2)
 
-        print("Connected to Arduino on /dev/ttyACM0 at 115200 baud.")
+        print("Connected to Arduino on /dev/ttyACM0 at 9600 baud.")
         
     def run(self):
         while self._running:
@@ -27,10 +27,12 @@ class threadSerial(ThreadWithStop):
             data = self._pipes.receive(laneDetectionToSerialError)
 
             if data is not None:
-                data = data["bottom"]
+                data = data["middle"]
                 out_str = f"{data}\n"
                 self.ser.write(out_str.encode('utf-8'))
-                print(f"Sent angle={data} to Arduino.")
+
+                if self._debug:
+                    print(f"Sent angle={data} to Arduino.")
 
             time.sleep(0.01)
 

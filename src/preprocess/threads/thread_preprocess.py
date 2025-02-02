@@ -35,7 +35,7 @@ class threadPreprocess(ThreadWithStop):
             image = self._pipes.receive(captureToPreprocessImage)
 
             if image is None:
-                time.sleep(0.001)
+                time.sleep(0.01)
                 continue
 
             preprocessed_image = ImagePreprocess().preprocess(image)

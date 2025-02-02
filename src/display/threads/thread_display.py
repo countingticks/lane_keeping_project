@@ -18,24 +18,27 @@ class ThreadDisplay(ThreadWithStop):
         while self._running:
             # display real image
             real_image = self._pipes.receive(captureToDisplayImage)
-            lane_data = self._pipes.receive(laneDetectionToDisplayData)
-
-            if lane_data is not None:
-                lane_data = lane_data["lines"]
-
-                if lane_data["left"] is not None:
-                    cv2.polylines(real_image, [lane_data["left"]], False, (255, 0, 0), 2)
-
-                if lane_data["right"] is not None:
-                    cv2.polylines(real_image, [lane_data["right"]], False, (0, 0, 255), 2)
-
-                if lane_data["middle"] is not None:
-                    cv2.polylines(real_image, [lane_data["middle"]], False, (0, 255, 0), 2)
 
             if self._debug:
                 print("real image: ", real_image)
 
             if real_image is not None:
+                lane_data = self._pipes.receive(laneDetectionToDisplayData)
+
+                if lane_data is not None:
+
+                    if self._debug:
+                        print("left line:", lane_data["left"] is not None, "right lane", lane_data["right"] is not None)
+
+                    if lane_data["left"] is not None:
+                        cv2.polylines(real_image, [lane_data["left"]], False, (255, 0, 0), 2)
+
+                    if lane_data["right"] is not None:
+                        cv2.polylines(real_image, [lane_data["right"]], False, (0, 0, 255), 2)
+
+                    if lane_data["middle"] is not None:
+                        cv2.polylines(real_image, [lane_data["middle"]], False, (0, 255, 0), 2)
+
                 cv2.imshow("real_image", real_image)
                 cv2.waitKey(1)
 
@@ -45,13 +48,11 @@ class ThreadDisplay(ThreadWithStop):
             if self._debug:
                 print("image: ", image)
 
-            if image is None:
-                time.sleep(0.02)
-                continue
+            if image is not None:
+                cv2.imshow("test", image)
+                cv2.waitKey(1)
 
-            cv2.imshow("test", image)
-            cv2.waitKey(1)
-            time.sleep(0.02)
+            time.sleep(0.01)
 
     def start(self):
         super(ThreadDisplay, self).start()

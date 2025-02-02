@@ -53,11 +53,9 @@ class LaneDetect:
         middleLineCoordinates = self.getMiddleLine(leftLineCoordinates, rightLineCoordinates)
 
         return {
-            "lines": {
-                "left": leftLineCoordinates,
-                "right": rightLineCoordinates,
-                "middle": middleLineCoordinates
-            }
+            "left": leftLineCoordinates,
+            "right": rightLineCoordinates,
+            "middle": middleLineCoordinates
         }
 
     # --------------------- FULL SLIDING-WINDOW SEARCH --------------------- #

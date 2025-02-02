@@ -11,16 +11,17 @@ from src.serial.process_serial import processSerial
 
 # flags
 live_camera = True
+serial = True
 
 # processes
 processes = list()
 blocker = Event()
 pipes = PipeStorage(debug=True)
 
-processes.append(processSerial(pipes, debug=False))
+processes.append(processSerial(pipes, debug=False)) if serial else None
 processes.append(processCapture(live_camera, pipes, debug=False))
 processes.append(processPreprocess(pipes, debug=False))
-processes.append(processLaneDetection(pipes, debug=False))
+processes.append(processLaneDetection(serial, pipes, debug=False))
 processes.append(processDisplay(pipes, debug=False))
 
 print("\nStarting processes...\n") 
